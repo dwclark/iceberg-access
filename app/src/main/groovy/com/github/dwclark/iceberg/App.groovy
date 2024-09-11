@@ -26,6 +26,10 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3Client
 
+//ideas adapted from:
+//https://tabular.io/blog/java-api-part-3/
+//https://tabular.io/blog/docker-spark-and-iceberg-the-fastest-way-to-try-iceberg/
+
 class MyFactory implements S3FileIOAwsClientFactory {
     private static S3Client init() {
 	AwsBasicCredentials identity = AwsBasicCredentials.create(System.getenv('AWS_ACCESS_KEY_ID'), System.getenv('AWS_SECRET_ACCESS_KEY'))
