@@ -8,6 +8,7 @@ import org.apache.iceberg.types.Type
 import org.apache.iceberg.types.Types
 import java.util.regex.Pattern
 
+//TODO: convert decimal to use more standard decimal(10,10) format
 class TableInfo {
 
     private int index = 1
@@ -92,7 +93,8 @@ class TableInfo {
     private String identifierPattern = /[a-zA-Z_][0-9a-zA-Z_]*/
     private String typePattern = /[a-zA-Z_][0-9a-zA-Z_]*[\[\]:\d]*/
     private Pattern getCreateRegEx() { ~/(?i)create table\s+(${tableNamePattern})\s*\(([^\(]+)\)/ }
-    private Pattern getColumnRegEx() { ~/(?i)(${identifierPattern})\s+(${typePattern})\s*(.*)/ }
+    private Pattern getColumnRegEx() { ~/(?i)(${identifierPattern})\s+(${typePattern})\s*(null|not null)*/ }
+    private Pattern getMapRegEx() { ~/(?i)(${typePattern})\s*(null|not null)*/ }
     private Pattern getTypeRegEx() { ~/create type\s+(${identifierPattern})\s+(list|struct|map)<([^>]+)>/ }
     
     static final String basic = """create table my_namespace.foobar(
@@ -119,8 +121,8 @@ my_map strs_to_longs_nulls null
 
     static final String createList = 'create type list_of_strings list<string>'
     static final String createStruct = 'create type my_struct struct<name string not null, age int not null, rate double null>'
-    static final String createMap = 'create type strs_to_longs map<string,long>'
-    static final String createMap2 = 'create type strs_to_longs_nulls map<string,long null>'
+    static final String createMap = 'create type strs_to_longs map<string,long not null>'
+    static final String createMap2 = 'create type strs_to_longs_nulls map<string,long>'
     
     private TableIdentifier toTableIdentifier(String s) {
 	final List ary = s.split(/\./) as List
@@ -144,24 +146,31 @@ my_map strs_to_longs_nulls null
 	    allTypes.add([typeName, { ignore -> Types.ListType.ofRequired(nextIndex(), icebergType(typeSpec)) }])
 	}
 	else if(complexType == 'struct') {
-	    def nestedFields = (typeSpec.split(',') as List).collect { sub ->
-		def parts = sub.trim().split(/\s+/)
-		def partName = parts[0]
-		def partType = parts[1]
-		def optional = (parts.length == 2) ? true : parseOptional(parts[2..<parts.size()].join(' '))
-		Types.NestedField.of(nextIndex(), optional, partName, icebergType(partType))
+	    def colMatcher = typeSpec =~ columnRegEx
+	    assert colMatcher
+	    def fields = colMatcher.collect { match ->
+		def col = new Column(nextIndex(), match[1], match[2], match[3])
+		return col.toField()
 	    }
-
-	    final newType = Types.StructType.of(nestedFields)
+	    
+	    final newType = Types.StructType.of(fields)
 	    allTypes.add([typeName, { ignore -> newType }])
 	}
 	else if(complexType == 'map') {
+	    def mapMatcher = typeSpec =~ mapRegEx
+	    assert mapMatcher
+	    def key = mapMatcher[0][1]
+	    def value = mapMatcher[1][1]
+	    def optional = parseOptional(mapMatcher[1][2])
+	    /*
+	    def (keyMatch, valueMatch) = mapMatcher as List
+	    
 	    def (key, valueSpec) = typeSpec.split(',').collect { it.trim() }
 	    def list = valueSpec.split(/\s+/)
-	    def optional = (list.length == 1) ? true : parseOptional(list[1..<list.size()].join(' '))
+	    def optional = (list.length == 1) ? true : parseOptional(list[1..<list.size()].join(' '))*/
 	    def newType = (optional ?
-			   Types.MapType.ofOptional(nextIndex(), nextIndex(), icebergType(key), icebergType(list[0])) :
-			   Types.MapType.ofRequired(nextIndex(), nextIndex(), icebergType(key), icebergType(list[0])))
+			   Types.MapType.ofOptional(nextIndex(), nextIndex(), icebergType(key), icebergType(value)) :
+			   Types.MapType.ofRequired(nextIndex(), nextIndex(), icebergType(key), icebergType(value)))
 	    allTypes.add([typeName, { ignore -> newType }])
 	}
     }
@@ -169,12 +178,12 @@ my_map strs_to_longs_nulls null
     TableInfo createTable(String stmt) {
 	def matcher = stmt =~ createRegEx
 	assert matcher
-	
-	List colDefs = matcher[0][2].trim().split(',') as List
-	def fields = colDefs.collect { colDef ->
-	    def colMatcher = colDef =~ columnRegEx
-	    assert colMatcher
-	    def col = new Column(nextIndex(), colMatcher[0][1], colMatcher[0][2], colMatcher[0][3])
+
+	final String rest = matcher[0][2].trim()
+	def colMatcher = rest =~ columnRegEx
+	assert colMatcher
+	def fields = colMatcher.collect { match ->
+	    def col = new Column(nextIndex(), match[1], match[2], match[3])
 	    return col.toField()
 	}
 
@@ -193,10 +202,14 @@ my_map strs_to_longs_nulls null
 	println ti.icebergType('list_of_strings')
 
 	ti.createType(createMap)
-	println ti.icebergType('strs_to_longs')
-
+	def tmp = ti.icebergType('strs_to_longs')
+	assert tmp.valueRequired
+	println tmp
+	
 	ti.createType(createMap2)
-	println ti.icebergType('strs_to_longs_nulls')
+	tmp = ti.icebergType('strs_to_longs_nulls')
+	assert tmp.valueOptional
+	println tmp
 
 	ti.createType(createStruct)
 	println ti.icebergType('my_struct')
