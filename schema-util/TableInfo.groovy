@@ -162,12 +162,6 @@ my_map strs_to_longs_nulls null
 	    def key = mapMatcher[0][1]
 	    def value = mapMatcher[1][1]
 	    def optional = parseOptional(mapMatcher[1][2])
-	    /*
-	    def (keyMatch, valueMatch) = mapMatcher as List
-	    
-	    def (key, valueSpec) = typeSpec.split(',').collect { it.trim() }
-	    def list = valueSpec.split(/\s+/)
-	    def optional = (list.length == 1) ? true : parseOptional(list[1..<list.size()].join(' '))*/
 	    def newType = (optional ?
 			   Types.MapType.ofOptional(nextIndex(), nextIndex(), icebergType(key), icebergType(value)) :
 			   Types.MapType.ofRequired(nextIndex(), nextIndex(), icebergType(key), icebergType(value)))
