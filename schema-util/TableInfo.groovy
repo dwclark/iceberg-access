@@ -119,6 +119,22 @@ my_list list_of_strings not null,
 my_map strs_to_longs_nulls null
 )"""
 
+    static final String full = """
+create type list_of_strings list<string>
+create type my_struct struct<name string not null, age int not null, rate double null>
+create type strs_to_longs map<string,long>
+create type strs_to_longs_nulls map<string,long null>
+
+create table my_namespace.my_table (
+  id long not null,
+  payment decimal[20:4] not null,
+  blob fixed[1024] null,
+  the_struct my_struct not null,
+  the_list list_of_strings not null,
+  the_map strs_to_longs_nulls not null
+)
+"""
+
     static final String createList = 'create type list_of_strings list<string>'
     static final String createStruct = 'create type my_struct struct<name string not null, age int not null, rate double null>'
     static final String createMap = 'create type strs_to_longs map<string,long not null>'
@@ -132,13 +148,7 @@ my_map strs_to_longs_nulls null
 	return TableIdentifier.of(namespace, tableName)
     }
 
-    void createType(String str) {
-	def matcher = str =~ typeRegEx
-	assert matcher
-	String typeName = matcher[0][1].toLowerCase()
-	String complexType = matcher[0][2].toLowerCase()
-	String typeSpec = matcher[0][3].toLowerCase().trim()
-
+    void createType(String typeName, String complexType, String typeSpec) {
 	if(types.contains(typeName))
 	    throw new IllegalArgumentException("${typeName} has already been defined")
 
@@ -168,20 +178,46 @@ my_map strs_to_longs_nulls null
 	    allTypes.add([typeName, { ignore -> newType }])
 	}
     }
-    
-    TableInfo createTable(String stmt) {
-	def matcher = stmt =~ createRegEx
-	assert matcher
 
-	final String rest = matcher[0][2].trim()
+    void createType(String str) {
+	def matcher = str =~ typeRegEx
+	assert matcher
+	createType(matcher[0][1].toLowerCase(), matcher[0][2].toLowerCase(), matcher[0][3].toLowerCase().trim())
+    }
+
+    TableInfo createTable(String tableName, String rest) {
 	def colMatcher = rest =~ columnRegEx
 	assert colMatcher
 	def fields = colMatcher.collect { match ->
 	    def col = new Column(nextIndex(), match[1], match[2], match[3])
 	    return col.toField()
 	}
+	
+	tables[tableName] = new Schema(fields)
+	this
+    }
+    
+    TableInfo createTable(String stmt) {
+	def matcher = stmt =~ createRegEx
+	assert matcher
+	return createTable(matcher[0][1], matcher[0][2].trim())
+    }
 
-	tables[toTableIdentifier(matcher[0][1])] = new Schema(fields)
+    TableInfo create(String script) {
+	def typeMatcher = script =~ typeRegEx
+	if(typeMatcher) {
+	    for(def match in typeMatcher) {
+		createType(match[1].toLowerCase(), match[2].toLowerCase(), match[3].toLowerCase())
+	    }
+	}
+
+	def tableMatcher = script =~ createRegEx
+	if(tableMatcher) {
+	    for(def match in tableMatcher) {
+		createTable(match[1], match[2].trim())
+	    }
+	}
+
 	this
     }
     
@@ -210,5 +246,8 @@ my_map strs_to_longs_nulls null
 
 	ti.createTable(hard)
 	println ti.tables
+
+	TableInfo tiFull = new TableInfo().create(full)
+	println tiFull.tables
     }
 }
